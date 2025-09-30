@@ -32,9 +32,9 @@ const RealtorList: React.FC<RealtorListProps> = ({ realtors, onAddRealtor, onEdi
   const filteredRealtors = useMemo(() => {
     return realtors.filter(realtor =>
       realtor.full_name.toLowerCase().includes(filter.toLowerCase()) ||
-      realtor.agency.toLowerCase().includes(filter.toLowerCase()) ||
-      realtor.email.toLowerCase().includes(filter.toLowerCase()) ||
-      (realtor.instagram_profile_url && realtor.instagram_profile_url.toLowerCase().includes(filter.toLowerCase()))
+      (realtor.agency || '').toLowerCase().includes(filter.toLowerCase()) ||
+      (realtor.email || '').toLowerCase().includes(filter.toLowerCase()) ||
+      (realtor.instagram_profile_url || '').toLowerCase().includes(filter.toLowerCase())
     );
   }, [realtors, filter]);
 
@@ -200,8 +200,24 @@ const RealtorList: React.FC<RealtorListProps> = ({ realtors, onAddRealtor, onEdi
                 {/* FIX: Handle null potential_contract_value to prevent crash */}
                 <td className="px-4 py-3 text-right font-semibold text-brand-400">${(realtor.potential_contract_value ?? 0).toLocaleString()}</td>
                 <td className="px-4 py-3 text-center">
-                  <button onClick={() => onEditRealtor(realtor)} className="p-1 text-slate-400 hover:text-brand-400 transition-colors"><EditIcon className="w-4 h-4" /></button>
-                  <button onClick={() => handleDeleteClick(realtor)} className="p-1 text-slate-400 hover:text-red-500 transition-colors"><TrashIcon className="w-4 h-4" /></button>
+                  <div className="flex items-center justify-center gap-3">
+                    <button 
+                        onClick={() => onEditRealtor(realtor)} 
+                        className="p-2 rounded-full text-slate-400 hover:bg-brand-500/20 hover:text-brand-400 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+                        aria-label={`Editar a ${realtor.full_name}`}
+                        title={`Editar a ${realtor.full_name}`}
+                    >
+                        <EditIcon className="w-5 h-5" />
+                    </button>
+                    <button 
+                        onClick={() => handleDeleteClick(realtor)} 
+                        className="p-2 rounded-full text-slate-400 hover:bg-red-500/20 hover:text-red-500 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+                        aria-label={`Eliminar a ${realtor.full_name}`}
+                        title={`Eliminar a ${realtor.full_name}`}
+                    >
+                        <TrashIcon className="w-5 h-5" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

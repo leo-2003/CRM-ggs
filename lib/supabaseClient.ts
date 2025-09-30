@@ -1,4 +1,5 @@
 
+
 import { createClient } from '@supabase/supabase-js';
 import { Realtor, RealtorActivity } from '../types';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.example';
@@ -15,16 +16,20 @@ export type Database = {
     Tables: {
       realtors: {
         Row: Realtor;
-        // FIX: Replaced overly permissive Partial<T> with more specific types to fix 'never' inference.
-        // Insert should not include database-generated columns.
-        Insert: Omit<Realtor, 'id' | 'created_at'>;
-        Update: Partial<Omit<Realtor, 'id' | 'created_at'>>;
+        // The Insert type omits database-generated columns.
+        // `user_id` is set by the database's `DEFAULT auth.uid()` and should not be sent by the client.
+        Insert: Omit<Realtor, 'id' | 'created_at' | 'user_id'>;
+        // The 'Update' type is made more specific to exclude non-updatable columns.
+        Update: Partial<Omit<Realtor, 'id' | 'created_at' | 'user_id'>>;
       };
       realtor_activities: {
           Row: RealtorActivity;
-          // FIX: Replaced overly permissive Partial<T> with more specific types to fix 'never' inference.
-          Insert: Omit<RealtorActivity, 'id' | 'created_at'>;
-          Update: Partial<Omit<RealtorActivity, 'id' | 'created_at'>>;
+          // The Insert type omits database-generated columns.
+          // `user_id` is set by the database's `DEFAULT auth.uid()` and should not be sent by the client.
+          Insert: Omit<RealtorActivity, 'id' | 'created_at' | 'user_id'>;
+          // The 'Update' type is made more specific to exclude non-updatable columns.
+          // An activity should not be moved between realtors, so realtor_id is also omitted.
+          Update: Partial<Omit<RealtorActivity, 'id' | 'created_at' | 'user_id' | 'realtor_id'>>;
       };
     };
     Views: Record<string, never>;
@@ -51,3 +56,60 @@ if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('YOUR_SUPABASE_URL')) {
 const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
 export { supabase };
+
+/**
+ * Parses a Supabase error object and returns a human-readable string.
+ * @param error The error object, which can be of any type.
+ * @returns A user-friendly error message string.
+ */
+export const parseSupabaseError = (error: any): string => {
+  // Log the raw error object to the console for detailed debugging
+  console.error("Raw Supabase Error:", error);
+
+  // Handle Supabase PostgrestError objects
+  if (error && typeof error === 'object' && 'message' in error) {
+    let message = String(error.message);
+    
+    // Check for common constraint violation details
+    if (message.includes('violates unique constraint')) {
+      if ('details' in error && typeof error.details === 'string' && error.details.includes('already exists')) {
+          return `Error de duplicado: ${error.details}`;
+      }
+      return 'Error: Se ha violado una restricción de valor único. Es posible que el correo electrónico ya esté en uso.';
+    }
+
+    if (message.includes('violates not-null constraint')) {
+       if ('details' in error && typeof error.details === 'string' && error.details) {
+           const columnNameMatch = error.details.match(/column "(\w+)"/);
+           if (columnNameMatch && columnNameMatch[1]) {
+               return `Error: El campo '${columnNameMatch[1]}' es obligatorio y no puede estar vacío.`;
+           }
+       }
+       return 'Error: Uno de los campos requeridos está vacío.';
+    }
+
+    // Append details and hint if they exist for other errors
+    if ('details' in error && typeof error.details === 'string' && error.details) {
+      message += ` | Detalles: ${error.details}`;
+    }
+    if ('hint' in error && typeof error.hint === 'string' && error.hint) {
+      message += ` | Sugerencia: ${error.hint}`;
+    }
+    return message;
+  }
+  
+  // Handle standard JavaScript Error objects
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  // Fallback for other types
+  try {
+    const jsonString = JSON.stringify(error);
+    if (jsonString && jsonString !== '{}') {
+      return jsonString;
+    }
+  } catch (e) { /* ignore stringify errors */ }
+  
+  return 'Ocurrió un error desconocido. Revisa la consola para más detalles.';
+};

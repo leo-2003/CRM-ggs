@@ -24,33 +24,33 @@ export const FUNNEL_STAGE_COLORS: { [key in FunnelStage]: string } = {
   [FunnelStage.Nurturing]: '#ca8a04',
 };
 
-export const EMPTY_REALTOR: Omit<Realtor, 'id' | 'created_at'> = {
-  // FIX: Add user_id to satisfy the type. It will be set by RLS on insert.
-  user_id: '',
+// FIX: Remove user_id as it will be set by RLS on insert, which is a more secure and reliable pattern.
+// The type is updated to Omit user_id as well to enforce this at compile time.
+export const EMPTY_REALTOR: Omit<Realtor, 'id' | 'created_at' | 'user_id'> = {
   full_name: '',
-  agency: '',
-  role: '',
-  phone: '',
-  email: '',
-  location: '',
+  agency: null,
+  role: null,
+  phone: null,
+  email: null,
+  location: null,
   // FIX: Changed from `''` to `null` to match the updated `Realtor` interface type.
   instagram_profile_url: null,
   production_level: ProductionLevel.Low,
   team_size: TeamSize.Individual,
   experience_years: null,
-  specialization: '',
+  specialization: null,
   annual_transactions: null,
-  pain_points: '',
+  pain_points: null,
   pain_point_tags: null,
   tech_adoption: TechAdoption.Low,
-  current_tools: '',
+  current_tools: null,
   ai_interest: AIInterest.Low,
-  lead_source: '',
+  lead_source: null,
   first_contact_date: null,
   funnel_stage: FunnelStage.Prospect,
   last_activity_date: null,
-  next_action: '',
-  notes: '',
-  proposed_solution: '',
+  next_action: null,
+  notes: null,
+  proposed_solution: null,
   potential_contract_value: null,
 };

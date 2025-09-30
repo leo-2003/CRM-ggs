@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { FunnelStage, Realtor } from '../types';
-import { supabase, Database } from '../lib/supabaseClient';
+import { supabase, Database, parseSupabaseError } from '../lib/supabaseClient';
 import Sidebar from './Sidebar';
 import Dashboard from './Dashboard';
 import RealtorList from './RealtorList';
@@ -21,32 +21,6 @@ interface ToastMessage {
   id: number;
   message: string;
   type: 'success' | 'error';
-}
-
-const parseSupabaseError = (error: any): string => {
-  // Handle Supabase error objects and standard Error objects
-  if (error && typeof error === 'object' && error.message && typeof error.message === 'string') {
-    let message = error.message;
-    if (error.details && typeof error.details === 'string') message += ` Details: ${error.details}`;
-    if (error.hint && typeof error.hint === 'string') message += ` Hint: ${error.hint}`;
-    return message;
-  }
-  // Handle plain strings
-  if (typeof error === 'string') {
-    return error;
-  }
-  // Fallback for other types or complex objects without a .message property
-  try {
-    const jsonString = JSON.stringify(error);
-    // Avoid returning an empty object string representation
-    if (jsonString !== '{}') {
-      return jsonString;
-    }
-  } catch (e) {
-    // Could be a circular reference, ignore stringify error
-  }
-  
-  return 'An unknown error occurred. Check the console for more details.';
 }
 
 interface CrmLayoutProps {
@@ -76,290 +50,272 @@ const CrmLayout: React.FC<CrmLayoutProps> = ({ session }) => {
   
   const getProfile = useCallback(async () => {
     try {
-        const { data: { user }, error } = await supabase.auth.getUser();
-        if (error) throw error;
-
-        // Update Avatar
-        if (user?.user_metadata.avatar_url) {
-            setAvatarUrl(`${user.user_metadata.avatar_url}?t=${new Date().getTime()}`);
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (user) {
+          setUserName(user.user_metadata?.full_name || user.email || 'Usuario');
+          setAvatarUrl(user.user_metadata?.avatar_url);
         }
-
-        // Update User Name
-        if (user?.user_metadata.full_name) {
-            setUserName(user.user_metadata.full_name);
-        } else if (user?.email) {
-            const namePart = user.email.split('@')[0];
-            const capitalizedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-            setUserName(capitalizedName);
-        }
-
     } catch (error: any) {
-        addToast(`Error al cargar el perfil: ${error.message}`, 'error');
+        addToast(`No se pudo cargar el perfil: ${error.message}`, 'error');
     }
   }, []);
 
   const getLogo = useCallback(async () => {
-     try {
+    try {
         const { data } = supabase.storage.from('logos').getPublicUrl('app-logo');
-        // Check if the file exists by trying to fetch its metadata
-        const { error: headError } = await supabase.storage.from('logos').download('app-logo');
-        
-        if (headError && headError.message !== 'The resource was not found') {
-            // An actual error occurred other than not found
-             throw headError;
-        }
-
-        if (!headError) {
-             // Add a timestamp to bypass browser cache
+        const { error } = await supabase.storage.from('logos').download('app-logo');
+        if (!error) {
             setLogoUrl(`${data.publicUrl}?t=${new Date().getTime()}`);
         } else {
-            setLogoUrl(null); // Explicitly set to null if not found
+            setLogoUrl(null);
         }
-     } catch (error: any) {
-         console.error("Error fetching logo:", error.message);
-         // Don't show a toast for a missing logo, it's not a critical error.
-     }
+    } catch (error: any) {
+        console.error("Error fetching logo:", error.message);
+    }
   }, []);
 
   const fetchRealtors = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
     try {
-      const { data, error } = await supabase.from('realtors').select('*').order('full_name', { ascending: true });
-      if (error) throw error;
+      setIsLoading(true);
+      setError(null);
+      const { data, error: fetchError } = await supabase
+        .from('realtors')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (fetchError) {
+        throw fetchError;
+      }
       setRealtors(data as Realtor[]);
-    } catch (err: any) {
-      const friendlyError = parseSupabaseError(err);
-      setError(friendlyError);
-      console.error("Error fetching realtors:", err);
+    } catch (error: any) {
+      // FIX: Handle authentication errors gracefully by signing the user out.
+      // This catches errors like "Invalid Refresh Token" or expired JWTs.
+      const isAuthError = (error?.message?.includes('Invalid Refresh Token') || 
+                           error?.message?.includes('JWT expired') ||
+                           error?.status === 401);
+
+      if (isAuthError) {
+        console.error("Authentication error detected. Signing out.", error);
+        // Force a sign-out. This will trigger the onAuthStateChange listener in App.tsx,
+        // which will then set the session to null and redirect to the Auth component.
+        await supabase.auth.signOut();
+      } else {
+        // For all other errors (e.g., network issues), show a toast.
+        const parsedError = parseSupabaseError(error);
+        setError(parsedError);
+        addToast(parsedError, 'error');
+      }
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchRealtors();
     getProfile();
     getLogo();
-  }, [fetchRealtors, getProfile, getLogo]);
+    fetchRealtors();
+  }, [getProfile, getLogo, fetchRealtors]);
 
-  const handleSetView = useCallback((newView: View) => {
-    setView(newView);
-  }, []);
-
-  const handleAddRealtorClick = () => {
-    setEditingRealtor(undefined);
-    setIsFormOpen(true);
-  };
-  
-  const handleEditRealtor = (realtor: Realtor) => {
-    setEditingRealtor(realtor);
-    setIsFormOpen(true);
-  };
-  
-  const handleSaveRealtor = async (realtorData: Partial<Realtor>): Promise<boolean> => {
-    // FIX: Cast to `any` to handle form data which may temporarily have incorrect types (e.g. pain_point_tags as a string instead of string[]).
-    const processedData: any = { ...realtorData };
-    if (processedData.first_contact_date === '') processedData.first_contact_date = null;
-    if (processedData.last_activity_date === '') processedData.last_activity_date = null;
-
-    // Convert comma-separated string of tags into an array
-    if (typeof processedData.pain_point_tags === 'string') {
-        processedData.pain_point_tags = processedData.pain_point_tags.split(',').map((tag: string) => tag.trim()).filter(Boolean);
+  const handleSignOut = async () => {
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+        addToast(`Error al cerrar sesión: ${signOutError.message}`, 'error');
     }
+  };
 
+  const handleSaveRealtor = async (realtorData: Partial<Realtor> & { pain_point_tags?: string | string[] | null }): Promise<boolean> => {
     try {
-      if (processedData.id) { // UPDATE
-        const { id, created_at, ...updateData } = processedData;
-        const originalRealtor = realtors.find(r => r.id === id);
-
-        // FIX: The type of updateData must match RealtorUpdate to satisfy Supabase client.
-        const { error } = await supabase.from('realtors').update(updateData as RealtorUpdate).eq('id', id);
-        if (error) throw error;
-        
-        if (originalRealtor && originalRealtor.funnel_stage !== updateData.funnel_stage) {
-            const activity: RealtorActivityInsert = {
-                realtor_id: id,
-                user_id: session.user.id,
-                activity_type: 'CAMBIO DE ETAPA',
-                details: `La etapa cambió de '${originalRealtor.funnel_stage}' a '${updateData.funnel_stage}'.`
-            };
-            // FIX: The `insert` method expects an array of records.
-            await supabase.from('realtor_activities').insert([activity]);
-        }
-        
-        addToast('Realtor actualizado con éxito!', 'success');
-      } else { // INSERT
-        const { id, created_at, ...insertPayload } = processedData;
-        const insertDataWithDefaults = { ...EMPTY_REALTOR, ...insertPayload, user_id: session.user.id };
-        
-        // FIX: Ensure the data passed to insert matches the RealtorInsert type.
-        const { data: newRealtor, error } = await supabase.from('realtors').insert([insertDataWithDefaults as RealtorInsert]).select().single();
-        if (error) throw error;
-        
-        // FIX: Add a null check, as .single() can return null.
-        if (!newRealtor) {
-          throw new Error('Failed to create realtor, no data returned.');
+        if (typeof realtorData.pain_point_tags === 'string') {
+            realtorData.pain_point_tags = realtorData.pain_point_tags.split(',').map(tag => tag.trim()).filter(Boolean);
+        } else if (!realtorData.pain_point_tags) {
+            realtorData.pain_point_tags = null;
         }
 
-        // FIX: Correctly type the returned data to avoid 'never' type errors.
-        const newRealtorData = newRealtor as Realtor;
+        if (editingRealtor) {
+            const { id, created_at, user_id, ...updateData } = realtorData as Partial<Realtor>;
+            const { data, error: updateError } = await supabase
+                .from('realtors')
+                .update(updateData as RealtorUpdate)
+                .eq('id', editingRealtor.id)
+                .select()
+                .single();
 
-        const activity: RealtorActivityInsert = {
-            realtor_id: newRealtorData.id,
-            user_id: session.user.id,
-            activity_type: 'REALTOR CREADO',
-            details: `El realtor "${newRealtorData.full_name}" fue añadido al CRM.`
-        };
-        // FIX: The `insert` method expects an array of records.
-        await supabase.from('realtor_activities').insert([activity]);
+            if (updateError) throw updateError;
+            if (data) {
+              setRealtors(realtors.map(r => r.id === data.id ? data : r));
+            }
+            addToast('Realtor actualizado con éxito.', 'success');
+        } else {
+            const insertData: RealtorInsert = { ...EMPTY_REALTOR, ...(realtorData as Partial<Realtor>) };
+            const { data, error: insertError } = await supabase
+                .from('realtors')
+                .insert(insertData)
+                .select()
+                .single();
 
-        addToast('Realtor añadido con éxito!', 'success');
-      }
-      setIsFormOpen(false);
-      await fetchRealtors();
-      return true;
-    } catch (err: any) {
-        const friendlyError = parseSupabaseError(err);
-        addToast(`Error al guardar: ${friendlyError}`, 'error');
-        console.error("Error saving realtor:", err);
+            if (insertError) throw insertError;
+            if (data) {
+              setRealtors([data, ...realtors]);
+            }
+            addToast('Realtor añadido con éxito.', 'success');
+        }
+        setIsFormOpen(false);
+        setEditingRealtor(undefined);
+        return true;
+    } catch (error: any) {
+        addToast(parseSupabaseError(error), 'error');
         return false;
-    }
-  };
-
-  const handleUpdateRealtorStage = async (realtorId: string, newStage: FunnelStage) => {
-    try {
-      const originalRealtor = realtors.find(r => r.id === realtorId);
-      if (!originalRealtor) throw new Error('Realtor no encontrado para registrar actividad.');
-
-      // FIX: Ensure update payload conforms to the expected type to prevent 'never' error.
-      const updatePayload: RealtorUpdate = { funnel_stage: newStage, last_activity_date: new Date().toISOString() };
-      const { error } = await supabase
-        .from('realtors')
-        .update(updatePayload)
-        .eq('id', realtorId);
-      if (error) throw error;
-
-      const activity: RealtorActivityInsert = {
-          realtor_id: realtorId,
-          user_id: session.user.id,
-          activity_type: 'CAMBIO DE ETAPA',
-          details: `La etapa cambió de '${originalRealtor.funnel_stage}' a '${newStage}'.`
-      };
-      // FIX: The `insert` method expects an array of records.
-      await supabase.from('realtor_activities').insert([activity]);
-
-      // Optimistic UI update
-      setRealtors(prevRealtors =>
-        prevRealtors.map(r =>
-          r.id === realtorId ? { ...r, funnel_stage: newStage } : r
-        )
-      );
-      addToast('Etapa del funnel actualizada.', 'success');
-    } catch (err: any) {
-      const friendlyError = parseSupabaseError(err);
-      addToast(`Error al actualizar: ${friendlyError}`, 'error');
-      console.error("Error updating funnel stage:", err);
     }
   };
 
   const handleDeleteRealtor = async (realtorId: string) => {
     try {
-        const { error } = await supabase.from('realtors').delete().eq('id', realtorId);
-        if (error) throw error;
+        // --- PRE-FLIGHT OWNERSHIP CHECK ---
+        const realtorToDelete = realtors.find(r => r.id === realtorId);
+        const { data: { user } } = await supabase.auth.getUser();
+
+        // Check if we have the necessary info to perform the pre-flight check.
+        if (realtorToDelete && user && realtorToDelete.user_id) {
+            // If we can verify, and the user is not the owner, throw a specific error.
+            if (realtorToDelete.user_id !== user.id) {
+                console.error(`RLS PRE-FLIGHT CHECK FAILED: User ID (${user.id}) does not match Realtor's user_id (${realtorToDelete.user_id}).`);
+                throw new Error('No tienes permiso para eliminar este realtor porque no te pertenece.');
+            }
+        }
+        // --- END OF PRE-FLIGHT CHECK ---
+
+        const { data: deletedRealtors, error: deleteError } = await supabase
+            .from('realtors')
+            .delete()
+            .eq('id', realtorId)
+            .select();
+        
+        if (deleteError) {
+            throw deleteError;
+        }
+
+        if (!deletedRealtors || deletedRealtors.length === 0) {
+            throw new Error('No se pudo eliminar el realtor. La base de datos rechazó la operación (posiblemente por permisos RLS).');
+        }
+
+        setRealtors(realtors.filter(r => r.id !== realtorId));
         addToast('Realtor eliminado con éxito.', 'success');
-        await fetchRealtors();
-    // FIX: Added curly braces to the catch block to fix a syntax error that was causing numerous compilation issues.
-    } catch (err: any) {
-        const friendlyError = parseSupabaseError(err);
-        addToast(`Error al eliminar: ${friendlyError}`, 'error');
-        console.error("Error deleting realtor:", err);
+    } catch (error: any) {
+        addToast(parseSupabaseError(error), 'error');
     }
-  }
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-  }
+  };
   
-  const onLogoUpdate = () => {
-      getLogo(); // Re-fetch the logo URL
-      addToast('Logo actualizado correctamente.', 'success');
+  const handleUpdateRealtorStage = async (realtorId: string, newStage: FunnelStage) => {
+    const originalRealtors = [...realtors];
+    try {
+        const updatedRealtors = realtors.map(r => r.id === realtorId ? { ...r, funnel_stage: newStage } : r);
+        setRealtors(updatedRealtors);
+        
+        const { error: updateError } = await supabase
+            .from('realtors')
+            .update({ funnel_stage: newStage, last_activity_date: new Date().toISOString() })
+            .eq('id', realtorId);
+        
+        if (updateError) throw updateError;
+
+        const activity: RealtorActivityInsert = {
+            realtor_id: realtorId,
+            activity_type: 'Cambio de Etapa',
+            details: `La etapa del funnel se cambió a: ${newStage}.`,
+        };
+        const { error: activityError } = await supabase.from('realtor_activities').insert(activity);
+        if (activityError) console.error("Failed to log activity:", activityError);
+
+        addToast('Etapa del funnel actualizada.', 'success');
+    } catch (error: any) {
+        setRealtors(originalRealtors);
+        addToast(parseSupabaseError(error), 'error');
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-screen bg-slate-900 text-xl text-slate-400">
+        Cargando CRM...
+      </div>
+    );
   }
 
-  const renderContent = () => {
-    if (isLoading) {
-      return <div className="flex justify-center items-center h-full"><p className="text-xl text-slate-400 animate-pulse">Cargando datos del CRM...</p></div>;
-    }
-    if (error) {
-       return (
-        <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-900/50 rounded-lg border border-red-500/30">
-            <h2 className="text-2xl font-bold text-red-400 mb-4">Error de Conexión con Supabase</h2>
-            <p className="text-slate-300 mb-6 bg-slate-800 p-3 rounded-md font-mono text-sm max-w-3xl w-full">
-                <strong>Mensaje de Error:</strong> {error}
-            </p>
-             <p className="text-slate-400">Por favor, asegúrate de que has ejecutado el último script SQL para configurar la seguridad de la base de datos.</p>
-        </div>
-       );
-    }
-    switch(view) {
-        case 'dashboard':
-            return <Dashboard realtors={realtors} />;
-        case 'realtors':
-            return <RealtorList realtors={realtors} onAddRealtor={handleAddRealtorClick} onEditRealtor={handleEditRealtor} onDeleteRealtor={handleDeleteRealtor} onUpdateRealtorStage={handleUpdateRealtorStage} />;
-        case 'settings':
-            return <Settings session={session} onLogoUpdate={onLogoUpdate} onProfileUpdate={getProfile} />;
-        default:
-            return null;
-    }
+  if (error && realtors.length === 0) {
+      return (
+          <div className="flex justify-center items-center h-screen bg-slate-900 text-xl text-red-400 p-8 text-center">
+              <div>
+                  <p>Ocurrió un error al cargar los datos:</p>
+                  <p className="mt-2 text-sm font-mono bg-slate-800 p-4 rounded-md">{error}</p>
+              </div>
+          </div>
+      );
   }
 
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-300 font-sans">
-      <Sidebar currentView={view} setView={handleSetView} userName={userName} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="relative bg-slate-900/70 backdrop-blur-sm border-b border-slate-800 p-4 flex items-center justify-end">
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-3">
+    <div className="flex h-screen bg-slate-950 text-slate-200">
+      <Sidebar currentView={view} setView={setView} userName={userName} />
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <header className="flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800">
+          <div className="flex items-center gap-4">
             {logoUrl ? (
-                <img src={logoUrl} alt="Agencia GGS Logo" className="w-8 h-8 object-contain" />
+              <img src={logoUrl} alt="Logo" className="h-8 w-auto object-contain" />
             ) : (
-                <GGSLogo className="w-8 h-8 text-brand-500" />
+              <GGSLogo className="h-8 w-8 text-brand-500" />
             )}
-            <span className="text-lg font-semibold text-white hidden sm:block">Agencia GGS</span>
           </div>
           <div className="flex items-center gap-4">
-             <span className="text-sm text-slate-400 hidden sm:inline">{session.user.email}</span>
-             {avatarUrl ? (
-                <img src={avatarUrl} alt="User Avatar" className="w-9 h-9 rounded-full border-2 border-slate-700 object-cover" />
-             ) : (
-                <div className="w-9 h-9 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center text-slate-500 text-xs">
-                    {session.user.email?.charAt(0).toUpperCase()}
-                </div>
-             )}
-             <button onClick={handleSignOut} title="Cerrar sesión" className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors">
-                <SignOutIcon className="w-5 h-5" />
-             </button>
+            <span className="text-sm font-medium hidden sm:block">{session.user.email}</span>
+            {avatarUrl && <img src={avatarUrl} alt="Avatar" className="w-8 h-8 rounded-full" />}
+            <button
+              onClick={handleSignOut}
+              className="p-2 rounded-md text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+              title="Cerrar sesión"
+            >
+              <SignOutIcon className="w-5 h-5" />
+            </button>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-slate-950/50">
-          {renderContent()}
-        </main>
-      </div>
-       <RealtorForm
+
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-950">
+          {view === 'dashboard' && <Dashboard realtors={realtors} />}
+          {view === 'realtors' && (
+            <RealtorList
+              realtors={realtors}
+              onAddRealtor={() => {
+                setEditingRealtor(undefined);
+                setIsFormOpen(true);
+              }}
+              onEditRealtor={(realtor) => {
+                setEditingRealtor(realtor);
+                setIsFormOpen(true);
+              }}
+              onDeleteRealtor={handleDeleteRealtor}
+              onUpdateRealtorStage={handleUpdateRealtorStage}
+            />
+          )}
+          {view === 'settings' && <Settings session={session} onLogoUpdate={getLogo} onProfileUpdate={getProfile} />}
+        </div>
+      </main>
+
+      <RealtorForm
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
         onSave={handleSaveRealtor}
         realtor={editingRealtor}
       />
-       <div aria-live="assertive" aria-atomic="true" className="fixed bottom-5 right-5 z-50 space-y-3 w-full max-w-xs">
-          {toasts.map(toast => (
-              <Toast
-                  key={toast.id}
-                  message={toast.message}
-                  type={toast.type}
-                  onDismiss={() => removeToast(toast.id)}
-              />
-          ))}
-       </div>
+
+      <div className="fixed top-5 right-5 z-50 space-y-2 w-full max-w-sm">
+        {toasts.map(toast => (
+          <Toast
+            key={toast.id}
+            message={toast.message}
+            type={toast.type}
+            onDismiss={() => removeToast(toast.id)}
+          />
+        ))}
+      </div>
     </div>
   );
 };

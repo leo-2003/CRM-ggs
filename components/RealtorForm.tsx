@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Realtor, RealtorActivity, FunnelStage, ProductionLevel, TeamSize, TechAdoption, AIInterest } from '../types';
 import { SpinnerIcon } from './Icons';
 import { EMPTY_REALTOR } from '../constants';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, parseSupabaseError } from '../lib/supabaseClient';
 
 interface RealtorFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (realtor: Partial<Realtor>) => Promise<boolean>;
+  // FIX: Update onSave prop to allow pain_point_tags to be a string, matching form state.
+  onSave: (realtor: Partial<Realtor> & { pain_point_tags?: string | string[] | null }) => Promise<boolean>;
   realtor?: Realtor;
 }
 
@@ -18,13 +19,16 @@ const FormLabel = (props: React.LabelHTMLAttributes<HTMLLabelElement>) => <label
 const FormSectionTitle = ({ children }: { children: React.ReactNode }) => <h3 className="text-lg font-semibold text-brand-400 md:col-span-2 mt-6 mb-2 border-b border-slate-700 pb-2">{children}</h3>
 
 const RealtorForm: React.FC<RealtorFormProps> = ({ isOpen, onClose, onSave, realtor }) => {
-  const [formData, setFormData] = useState<Partial<Realtor>>(realtor || EMPTY_REALTOR);
+  // FIX: Update formData state to allow pain_point_tags to be a string from the text input.
+  const [formData, setFormData] = useState<Partial<Realtor> & { pain_point_tags?: string | string[] | null }>(realtor || EMPTY_REALTOR);
   const [activities, setActivities] = useState<RealtorActivity[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [loadingActivities, setLoadingActivities] = useState(false);
+  const [activitiesError, setActivitiesError] = useState<string | null>(null);
 
   useEffect(() => {
     setFormData(realtor || EMPTY_REALTOR);
+    setActivitiesError(null);
     
     // Fetch activities if editing an existing realtor
     if (realtor?.id && isOpen) {
@@ -39,8 +43,9 @@ const RealtorForm: React.FC<RealtorFormProps> = ({ isOpen, onClose, onSave, real
                 if (error) throw error;
                 setActivities(data as RealtorActivity[]);
             } catch (error) {
-                console.error("Error fetching activities:", error);
-                // Optionally show a toast or error message
+                const parsedError = parseSupabaseError(error);
+                console.error("Error fetching activities:", parsedError);
+                setActivitiesError(parsedError);
             } finally {
                 setLoadingActivities(false);
             }
@@ -91,9 +96,9 @@ const RealtorForm: React.FC<RealtorFormProps> = ({ isOpen, onClose, onSave, real
             <div className="flex-1 overflow-y-auto p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                   <FormSectionTitle>Información Básica</FormSectionTitle>
-                  <div><FormLabel htmlFor="full_name">Nombre Completo</FormLabel><FormInput id="full_name" name="full_name" value={formData.full_name || ''} onChange={handleChange} required /></div>
-                  <div><FormLabel htmlFor="email">Correo Electrónico</FormLabel><FormInput id="email" type="email" name="email" value={formData.email || ''} onChange={handleChange} required /></div>
-                  <div><FormLabel htmlFor="agency">Agencia Inmobiliaria</FormLabel><FormInput id="agency" name="agency" value={formData.agency || ''} onChange={handleChange} required /></div>
+                  <div><FormLabel htmlFor="full_name">Nombre Completo <span className="text-red-500">*</span></FormLabel><FormInput id="full_name" name="full_name" value={formData.full_name || ''} onChange={handleChange} required /></div>
+                  <div><FormLabel htmlFor="email">Correo Electrónico</FormLabel><FormInput id="email" type="email" name="email" value={formData.email || ''} onChange={handleChange} /></div>
+                  <div><FormLabel htmlFor="agency">Agencia Inmobiliaria</FormLabel><FormInput id="agency" name="agency" value={formData.agency || ''} onChange={handleChange} /></div>
                   <div><FormLabel htmlFor="role">Cargo</FormLabel><FormInput id="role" name="role" value={formData.role || ''} onChange={handleChange} /></div>
                   <div><FormLabel htmlFor="phone">Número de Teléfono</FormLabel><FormInput id="phone" name="phone" value={formData.phone || ''} onChange={handleChange} /></div>
                   <div><FormLabel htmlFor="location">Ubicación</FormLabel><FormInput id="location" name="location" value={formData.location || ''} onChange={handleChange} /></div>
@@ -137,6 +142,7 @@ const RealtorForm: React.FC<RealtorFormProps> = ({ isOpen, onClose, onSave, real
                         <FormSectionTitle>Historial de Actividad</FormSectionTitle>
                         <div className="md:col-span-2 bg-slate-800/50 p-4 rounded-md max-h-60 overflow-y-auto">
                             {loadingActivities ? <p className="text-slate-400">Cargando historial...</p> : 
+                                activitiesError ? <div className="text-red-400 text-sm"><p className="font-bold">No se pudo cargar el historial:</p><p className="font-mono mt-1">{activitiesError}</p></div> :
                                 activities.length > 0 ? (
                                     <ul className="space-y-3">
                                         {activities.map(activity => (
