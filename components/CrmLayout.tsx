@@ -24,13 +24,29 @@ interface ToastMessage {
 }
 
 const parseSupabaseError = (error: any): string => {
-  if (typeof error === 'object' && error !== null) {
-    let message = error.message || 'An unknown error occurred.';
-    if (error.details) message += ` Details: ${error.details}`;
-    if (error.hint) message += ` Hint: ${error.hint}`;
+  // Handle Supabase error objects and standard Error objects
+  if (error && typeof error === 'object' && error.message && typeof error.message === 'string') {
+    let message = error.message;
+    if (error.details && typeof error.details === 'string') message += ` Details: ${error.details}`;
+    if (error.hint && typeof error.hint === 'string') message += ` Hint: ${error.hint}`;
     return message;
   }
-  return String(error);
+  // Handle plain strings
+  if (typeof error === 'string') {
+    return error;
+  }
+  // Fallback for other types or complex objects without a .message property
+  try {
+    const jsonString = JSON.stringify(error);
+    // Avoid returning an empty object string representation
+    if (jsonString !== '{}') {
+      return jsonString;
+    }
+  } catch (e) {
+    // Could be a circular reference, ignore stringify error
+  }
+  
+  return 'An unknown error occurred. Check the console for more details.';
 }
 
 interface CrmLayoutProps {
@@ -154,15 +170,17 @@ const CrmLayout: React.FC<CrmLayoutProps> = ({ session }) => {
 
     try {
       if (processedData.id) { // UPDATE
-        const { id, created_at, user_id, ...updateData } = processedData;
+        const { id, created_at, ...updateData } = processedData;
         const originalRealtor = realtors.find(r => r.id === id);
 
+        // FIX: The type of updateData must match RealtorUpdate to satisfy Supabase client.
         const { error } = await supabase.from('realtors').update(updateData as RealtorUpdate).eq('id', id);
         if (error) throw error;
         
         if (originalRealtor && originalRealtor.funnel_stage !== updateData.funnel_stage) {
             const activity: RealtorActivityInsert = {
                 realtor_id: id,
+                user_id: session.user.id,
                 activity_type: 'CAMBIO DE ETAPA',
                 details: `La etapa cambió de '${originalRealtor.funnel_stage}' a '${updateData.funnel_stage}'.`
             };
@@ -172,20 +190,24 @@ const CrmLayout: React.FC<CrmLayoutProps> = ({ session }) => {
         
         addToast('Realtor actualizado con éxito!', 'success');
       } else { // INSERT
-        const { id, created_at, user_id, ...insertPayload } = processedData;
-        const insertDataWithDefaults = { ...EMPTY_REALTOR, ...insertPayload };
-        const { user_id: _uid, ...finalInsertData } = insertDataWithDefaults;
+        const { id, created_at, ...insertPayload } = processedData;
+        const insertDataWithDefaults = { ...EMPTY_REALTOR, ...insertPayload, user_id: session.user.id };
         
-        const { data: newRealtorData, error } = await supabase.from('realtors').insert([finalInsertData as RealtorInsert]).select().single();
+        // FIX: Ensure the data passed to insert matches the RealtorInsert type.
+        const { data: newRealtor, error } = await supabase.from('realtors').insert([insertDataWithDefaults as RealtorInsert]).select().single();
         if (error) throw error;
         
         // FIX: Add a null check, as .single() can return null.
-        if (!newRealtorData) {
+        if (!newRealtor) {
           throw new Error('Failed to create realtor, no data returned.');
         }
 
+        // FIX: Correctly type the returned data to avoid 'never' type errors.
+        const newRealtorData = newRealtor as Realtor;
+
         const activity: RealtorActivityInsert = {
             realtor_id: newRealtorData.id,
+            user_id: session.user.id,
             activity_type: 'REALTOR CREADO',
             details: `El realtor "${newRealtorData.full_name}" fue añadido al CRM.`
         };
@@ -210,14 +232,17 @@ const CrmLayout: React.FC<CrmLayoutProps> = ({ session }) => {
       const originalRealtor = realtors.find(r => r.id === realtorId);
       if (!originalRealtor) throw new Error('Realtor no encontrado para registrar actividad.');
 
+      // FIX: Ensure update payload conforms to the expected type to prevent 'never' error.
+      const updatePayload: RealtorUpdate = { funnel_stage: newStage, last_activity_date: new Date().toISOString() };
       const { error } = await supabase
         .from('realtors')
-        .update({ funnel_stage: newStage, last_activity_date: new Date().toISOString() })
+        .update(updatePayload)
         .eq('id', realtorId);
       if (error) throw error;
 
       const activity: RealtorActivityInsert = {
           realtor_id: realtorId,
+          user_id: session.user.id,
           activity_type: 'CAMBIO DE ETAPA',
           details: `La etapa cambió de '${originalRealtor.funnel_stage}' a '${newStage}'.`
       };

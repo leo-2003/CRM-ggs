@@ -15,17 +15,16 @@ export type Database = {
     Tables: {
       realtors: {
         Row: Realtor;
-        // FIX: Simplified Insert/Update types to Partial<Realtor> to work around a complex 
-        // type inference issue in the Supabase client that was causing method parameters 
-        // to be incorrectly inferred as 'never'.
-        Insert: Partial<Realtor>;
-        Update: Partial<Realtor>;
+        // FIX: Replaced overly permissive Partial<T> with more specific types to fix 'never' inference.
+        // Insert should not include database-generated columns.
+        Insert: Omit<Realtor, 'id' | 'created_at'>;
+        Update: Partial<Omit<Realtor, 'id' | 'created_at'>>;
       };
       realtor_activities: {
           Row: RealtorActivity;
-          // FIX: Simplified Insert/Update types to Partial<RealtorActivity> to fix 'never' type errors.
-          Insert: Partial<RealtorActivity>;
-          Update: Partial<RealtorActivity>;
+          // FIX: Replaced overly permissive Partial<T> with more specific types to fix 'never' inference.
+          Insert: Omit<RealtorActivity, 'id' | 'created_at'>;
+          Update: Partial<Omit<RealtorActivity, 'id' | 'created_at'>>;
       };
     };
     Views: Record<string, never>;
