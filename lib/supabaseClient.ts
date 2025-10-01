@@ -3,7 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { Realtor, RealtorActivity } from '../types';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.example';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config';
 
 export type Database = {
   graphql_public: {
@@ -36,14 +36,8 @@ export type Database = {
           Update: Partial<Omit<RealtorActivity, 'id' | 'created_at' | 'user_id' | 'realtor_id'>>;
           // FIX: The relationship to the 'users' table was removed because the 'users' table is not defined in this schema type definition.
           // This was causing Supabase to infer `never` for insert/update/select types.
-          Relationships: [
-            {
-              foreignKeyName: "realtor_activities_realtor_id_fkey"
-              columns: ["realtor_id"]
-              referencedRelation: "realtors"
-              referencedColumns: ["id"]
-            }
-          ];
+          // By clearing all relationships, we prevent the invalid type from the `realtors` table (due to its own user_id FK) from propagating.
+          Relationships: [];
       };
     };
     Views: Record<string, never>;
@@ -80,7 +74,7 @@ const supabaseUrl = SUPABASE_URL;
 const supabaseKey = SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('YOUR_SUPABASE_URL')) {
-  throw new Error("Supabase URL and Anon Key must be provided. Please fill in your credentials in 'config.example.ts'.");
+  throw new Error("Supabase URL and Anon Key must be provided. Please create a 'config.ts' file from 'config.example.ts' and fill in your credentials.");
 }
 
 const supabase = createClient<Database>(supabaseUrl, supabaseKey);
