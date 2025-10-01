@@ -57,7 +57,17 @@ const CrmLayout: React.FC<CrmLayoutProps> = ({ session }) => {
           setAvatarUrl(user.user_metadata?.avatar_url);
         }
     } catch (error: any) {
-        addToast(`No se pudo cargar el perfil: ${error.message}`, 'error');
+        const isAuthError = (error?.message?.includes('Invalid Refresh Token') || 
+                           error?.message?.includes('JWT expired') ||
+                           error?.status === 401);
+
+        if (isAuthError) {
+          console.error("Authentication error on getProfile. Signing out.", error);
+          await supabase.auth.signOut();
+        } else {
+          const parsedError = parseSupabaseError(error);
+          addToast(`No se pudo cargar el perfil: ${parsedError}`, 'error');
+        }
     }
   }, []);
 

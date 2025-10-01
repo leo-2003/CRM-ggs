@@ -6,20 +6,6 @@ interface LeadSourceChartProps {
   realtors: Realtor[];
 }
 
-// FIX: Renamed type to `CustomPieLabelRenderProps` to avoid potential naming conflicts with
-// the `recharts` library's internal types, which was causing a complex type error.
-interface CustomPieLabelRenderProps {
-    cx: number;
-    cy: number;
-    midAngle: number;
-    innerRadius: number;
-    outerRadius: number;
-    percent: number;
-    // FIX: Add index signature to allow for additional properties passed by recharts,
-    // which resolves the complex type incompatibility error.
-    [x: string]: any;
-}
-
 // Greatly expanded color library for better visual distinction across many lead sources.
 const COLORS = [
     '#38bdf8', // Light Blue
@@ -69,7 +55,9 @@ const LeadSourceChart: React.FC<LeadSourceChartProps> = ({ realtors }) => {
           fill="#8884d8"
           dataKey="value"
           nameKey="name"
-          label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }: CustomPieLabelRenderProps) => {
+          // FIX: Use `any` for the props type to resolve a complex type incompatibility with Recharts.
+          // The library's provided types are not specific enough for the properties injected into the label renderer.
+          label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
             const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
             const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
             const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
