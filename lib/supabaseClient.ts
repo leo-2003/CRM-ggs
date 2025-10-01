@@ -1,5 +1,6 @@
 
 
+
 import { createClient } from '@supabase/supabase-js';
 import { Realtor, RealtorActivity } from '../types';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.example';
@@ -34,7 +35,23 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
-    Enums: Record<string, never>;
+    // FIX: Define database enums to ensure correct type inference for Supabase client operations.
+    Enums: {
+      ai_interest: "Bajo" | "Medio" | "Alto";
+      funnel_stage:
+        | "Prospect"
+        | "Contacted"
+        | "Qualified"
+        | "Demo/Presentation Agendada"
+        | "Propuesta Enviada"
+        | "Negociación"
+        | "Ganado/Cerrado"
+        | "Perdido"
+        | "En Nurturing";
+      production_level: "$50k-$100k" | "$100k-$250k" | "$250k+";
+      team_size: "Individual" | "Equipo Pequeño (2-5)" | "Equipo Grande (6+)";
+      tech_adoption: "Bajo" | "Medio" | "Alto";
+    };
     CompositeTypes: Record<string, never>;
   };
   storage: {
