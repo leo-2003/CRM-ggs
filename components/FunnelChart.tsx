@@ -8,6 +8,55 @@ interface FunnelChartProps {
   realtors: Realtor[];
 }
 
+// Helper function to determine the best contrasting color (dark or light) for a given background hex color.
+const getContrastColor = (hex: string) => {
+    // If the hex is not provided, default to a dark color.
+    if (!hex) return '#0c192e';
+    
+    // Strip '#' if it exists.
+    const hexcolor = hex.startsWith("#") ? hex.substring(1) : hex;
+    
+    // Parse the R, G, B values.
+    const r = parseInt(hexcolor.substr(0, 2), 16);
+    const g = parseInt(hexcolor.substr(2, 2), 16);
+    const b = parseInt(hexcolor.substr(4, 2), 16);
+    
+    // Calculate YIQ value to determine brightness.
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    
+    // Return dark color for light backgrounds, and white for dark backgrounds.
+    // A threshold of 150 is often more balanced than the standard 128.
+    return (yiq >= 150) ? '#0c192e' : '#ffffff';
+};
+
+
+// A custom label component for the funnel chart values (the numbers).
+// It dynamically sets the text color to ensure it contrasts with the segment's background color.
+const CustomizedValueLabel = (props: any) => {
+    const { x, y, width, height, value, fill } = props;
+    
+    // Do not render a label for a value of 0.
+    if (value === 0 || value === null || value === undefined) return null;
+
+    // Determine the best text color for the given segment fill.
+    const textColor = getContrastColor(fill);
+
+    return (
+        <text
+            x={x + width / 2}
+            y={y + height / 2}
+            fill={textColor}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontWeight="bold"
+            fontSize="16px"
+        >
+            {value}
+        </text>
+    );
+};
+
+
 const FunnelChart: React.FC<FunnelChartProps> = ({ realtors }) => {
   const funnelData = useMemo(() => {
     const stageCounts: { [key in FunnelStage]?: number } = {};
@@ -53,15 +102,11 @@ const FunnelChart: React.FC<FunnelChartProps> = ({ realtors }) => {
             dataKey="name"
             style={{ fontSize: '14px' }}
           />
-          {/* Label for the count, placed in the center of the segment */}
+          {/* Label for the count, using a custom component to ensure contrast */}
           <LabelList 
             dataKey="value" 
-            position="center" 
-            stroke="none" 
-            fill="#0c192e" // Dark text for contrast on light segments
-            fontWeight="bold"
-            formatter={(value: number) => (value > 0 ? value : '')} // Don't show '0'
-            style={{ fontSize: '16px' }}
+            position="center"
+            content={<CustomizedValueLabel />}
            />
           {
             funnelData.map((entry, index) => (

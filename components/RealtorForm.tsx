@@ -16,7 +16,8 @@ const FormInput = (props: React.InputHTMLAttributes<HTMLInputElement>) => <input
 const FormSelect = (props: React.SelectHTMLAttributes<HTMLSelectElement>) => <select {...props} className="w-full bg-slate-800 border border-slate-700 p-2 rounded text-white focus:outline-none focus:ring-2 focus:ring-brand-500" />;
 const FormTextArea = (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} className="w-full bg-slate-800 border border-slate-700 p-2 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />;
 const FormLabel = (props: React.LabelHTMLAttributes<HTMLLabelElement>) => <label {...props} className="block text-sm font-medium text-slate-400 mb-1" />;
-const FormSectionTitle = ({ children }: { children: React.ReactNode }) => <h3 className="text-lg font-semibold text-brand-400 md:col-span-2 mt-6 mb-2 border-b border-slate-700 pb-2">{children}</h3>
+// FIX: Changed component definition to use React.FC for better type safety and to resolve "children is missing" errors.
+const FormSectionTitle: React.FC = ({ children }) => <h3 className="text-lg font-semibold text-brand-400 md:col-span-2 mt-6 mb-2 border-b border-slate-700 pb-2">{children}</h3>
 
 const RealtorForm: React.FC<RealtorFormProps> = ({ isOpen, onClose, onSave, realtor }) => {
   // FIX: Update formData state to allow pain_point_tags to be a string from the text input.
