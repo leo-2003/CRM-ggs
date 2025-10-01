@@ -1,6 +1,4 @@
 
-
-
 import { createClient } from '@supabase/supabase-js';
 import { Realtor, RealtorActivity } from '../types';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.example';
@@ -22,6 +20,8 @@ export type Database = {
         Insert: Omit<Realtor, 'id' | 'created_at' | 'user_id'>;
         // The 'Update' type is made more specific to exclude non-updatable columns.
         Update: Partial<Omit<Realtor, 'id' | 'created_at' | 'user_id'>>;
+        // FIX: Add Relationships property, which is required by supabase-js for correct type inference.
+        Relationships: [];
       };
       realtor_activities: {
           Row: RealtorActivity;
@@ -31,6 +31,8 @@ export type Database = {
           // The 'Update' type is made more specific to exclude non-updatable columns.
           // An activity should not be moved between realtors, so realtor_id is also omitted.
           Update: Partial<Omit<RealtorActivity, 'id' | 'created_at' | 'user_id' | 'realtor_id'>>;
+          // FIX: Add Relationships property, which is required by supabase-js for correct type inference.
+          Relationships: [];
       };
     };
     Views: Record<string, never>;

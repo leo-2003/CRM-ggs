@@ -20,8 +20,24 @@ interface CustomPieLabelRenderProps {
     [x: string]: any;
 }
 
-// Updated, more diverse color palette for better visual distinction
-const COLORS = ['#38bdf8', '#4ade80', '#facc15', '#a78bfa', '#f472b6', '#2dd4bf'];
+// Greatly expanded color library for better visual distinction across many lead sources.
+const COLORS = [
+    '#38bdf8', // Light Blue
+    '#4ade80', // Green
+    '#facc15', // Yellow
+    '#a78bfa', // Purple
+    '#f472b6', // Pink
+    '#2dd4bf', // Teal
+    '#fb923c', // Orange
+    '#f87171', // Red
+    '#818cf8', // Indigo
+    '#c084fc', // Fuchsia
+    '#34d399', // Emerald
+    '#fbbf24', // Amber
+    '#a3e635', // Lime
+    '#67e8f9', // Cyan
+    '#e879f9', // Violet
+];
 
 const LeadSourceChart: React.FC<LeadSourceChartProps> = ({ realtors }) => {
   const chartData = useMemo(() => {
